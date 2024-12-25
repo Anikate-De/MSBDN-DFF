@@ -2,35 +2,43 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from networks.base_networks import Encoder_MDCBlock1, Decoder_MDCBlock1
+
+
 def make_model(args, parent=False):
     return Net()
 
+
 class make_dense(nn.Module):
-  def __init__(self, nChannels, growthRate, kernel_size=3):
-    super(make_dense, self).__init__()
-    self.conv = nn.Conv2d(nChannels, growthRate, kernel_size=kernel_size, padding=(kernel_size-1)//2, bias=False)
-  def forward(self, x):
-    out = F.relu(self.conv(x))
-    out = torch.cat((x, out), 1)
-    return out
+    def __init__(self, nChannels, growthRate, kernel_size=3):
+        super(make_dense, self).__init__()
+        self.conv = nn.Conv2d(nChannels, growthRate, kernel_size=kernel_size, padding=(kernel_size - 1) // 2,
+                              bias=False)
+
+    def forward(self, x):
+        out = F.relu(self.conv(x))
+        out = torch.cat((x, out), 1)
+        return out
+
 
 # Residual dense block (RDB) architecture
 class RDB(nn.Module):
-  def __init__(self, nChannels, nDenselayer, growthRate, scale = 1.0):
-    super(RDB, self).__init__()
-    nChannels_ = nChannels
-    self.scale = scale
-    modules = []
-    for i in range(nDenselayer):
-        modules.append(make_dense(nChannels_, growthRate))
-        nChannels_ += growthRate
-    self.dense_layers = nn.Sequential(*modules)
-    self.conv_1x1 = nn.Conv2d(nChannels_, nChannels, kernel_size=1, padding=0, bias=False)
-  def forward(self, x):
-    out = self.dense_layers(x)
-    out = self.conv_1x1(out) * self.scale
-    out = out + x
-    return out
+    def __init__(self, nChannels, nDenselayer, growthRate, scale=1.0):
+        super(RDB, self).__init__()
+        nChannels_ = nChannels
+        self.scale = scale
+        modules = []
+        for i in range(nDenselayer):
+            modules.append(make_dense(nChannels_, growthRate))
+            nChannels_ += growthRate
+        self.dense_layers = nn.Sequential(*modules)
+        self.conv_1x1 = nn.Conv2d(nChannels_, nChannels, kernel_size=1, padding=0, bias=False)
+
+    def forward(self, x):
+        out = self.dense_layers(x)
+        out = self.conv_1x1(out) * self.scale
+        out = out + x
+        return out
+
 
 class ConvLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride):
@@ -47,8 +55,8 @@ class ConvLayer(nn.Module):
 
 class UpsampleConvLayer(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride):
-      super(UpsampleConvLayer, self).__init__()
-      self.conv2d = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride=stride)
+        super(UpsampleConvLayer, self).__init__()
+        self.conv2d = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride=stride)
 
     def forward(self, x):
         out = self.conv2d(x)
@@ -68,6 +76,7 @@ class ResidualBlock(torch.nn.Module):
         out = self.conv2(out) * 0.1
         out = torch.add(out, residual)
         return out
+
 
 class Net(nn.Module):
     def __init__(self, res_blocks=18):
@@ -153,7 +162,6 @@ class Net(nn.Module):
 
         self.conv_output = ConvLayer(16, 3, kernel_size=3, stride=1)
 
-
     def forward(self, x):
         res1x = self.conv_input(x)
         res1x_1, res1x_2 = res1x.split([(res1x.size()[1] // 2), (res1x.size()[1] // 2)], dim=1)
@@ -166,9 +174,9 @@ class Net(nn.Module):
         res2x_2 = self.conv1(res2x_2)
         feature_mem.append(res2x_1)
         res2x = torch.cat((res2x_1, res2x_2), dim=1)
-        res2x =self.dense1(res2x) + res2x
+        res2x = self.dense1(res2x) + res2x
 
-        res4x =self.conv4x(res2x)
+        res4x = self.conv4x(res2x)
         res4x_1, res4x_2 = res4x.split([(res4x.size()[1] // 2), (res4x.size()[1] // 2)], dim=1)
         res4x_1 = self.fusion2(res4x_1, feature_mem)
         res4x_2 = self.conv2(res4x_2)
@@ -191,7 +199,7 @@ class Net(nn.Module):
         res16x = torch.cat((res16x_1, res16x_2), dim=1)
 
         res_dehaze = res16x
-        in_ft = res16x*2
+        in_ft = res16x * 2
         res16x = self.dehaze(in_ft) + in_ft - res_dehaze
         res16x_1, res16x_2 = res16x.split([(res16x.size()[1] // 2), (res16x.size()[1] // 2)], dim=1)
         feature_mem_up = [res16x_1]
@@ -215,7 +223,6 @@ class Net(nn.Module):
         res4x_2 = self.conv_3(res4x_2)
         feature_mem_up.append(res4x_1)
         res4x = torch.cat((res4x_1, res4x_2), dim=1)
-
 
         res4x = self.convd4x(res4x)
         res4x = F.upsample(res4x, res2x.size()[2:], mode='bilinear')
